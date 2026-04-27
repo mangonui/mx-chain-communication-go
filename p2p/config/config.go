@@ -13,6 +13,7 @@ type NodeConfig struct {
 	MaximumExpectedPeerCount        uint64
 	ThresholdMinConnectedPeers      uint32
 	MinNumPeersToWaitForOnBootstrap uint32
+	EnableNATPortMap                bool
 	Transports                      TransportConfig
 	ResourceLimiter                 ResourceLimiterConfig
 }
