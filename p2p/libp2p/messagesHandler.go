@@ -378,6 +378,9 @@ func (handler *messagesHandler) pubsubCallback(topicProcs TopicProcessor, topic 
 
 func (handler *messagesHandler) isEquivalentMessageFirstBroadcast(messageId []byte, topic string) bool {
 	if len(messageId) > 0 {
+		handler.mutTopics.Lock()
+		defer handler.mutTopics.Unlock()
+
 		_, ok := handler.equivalentMessages[topic]
 		if !ok {
 			return true

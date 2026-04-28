@@ -70,6 +70,10 @@ func createLibP2PCredentialsDirectSender() (peer.ID, libp2pCrypto.PrivKey) {
 	return id, prvKey
 }
 
+func setTestSignature(msg *pb.Message) {
+	msg.Signature = []byte("signature")
+}
+
 func TestNewDirectSender(t *testing.T) {
 	t.Parallel()
 
@@ -328,6 +332,7 @@ func TestDirectSender_ProcessReceivedDirectMessageAlreadySeenMsgShouldErr(t *tes
 	msg.From = []byte(id)
 	topic := "topic"
 	msg.Topic = &topic
+	setTestSignature(msg)
 
 	msgId := string(msg.GetFrom()) + string(msg.GetSeqno())
 	ds.SeenMessages().Add(msgId)
@@ -363,6 +368,7 @@ func TestDirectSender_ProcessReceivedDirectMessageShouldWork(t *testing.T) {
 	msg.From = []byte(id)
 	topic := "topic"
 	msg.Topic = &topic
+	setTestSignature(msg)
 
 	t.Run("Seqno contains bytes", func(t *testing.T) {
 		msg.Seqno = []byte("111")
@@ -419,6 +425,7 @@ func TestDirectSender_ProcessReceivedDirectMessageShouldCallMessageHandler(t *te
 	msg.From = []byte(id)
 	topic := "topic"
 	msg.Topic = &topic
+	setTestSignature(msg)
 
 	_ = ds.ProcessReceivedDirectMessage(msg, id)
 
@@ -458,6 +465,7 @@ func TestDirectSender_ProcessReceivedDirectMessageShouldReturnHandlersError(t *t
 	msg.From = []byte(id)
 	topic := "topic"
 	msg.Topic = &topic
+	setTestSignature(msg)
 
 	err := ds.ProcessReceivedDirectMessage(msg, id)
 
@@ -898,6 +906,32 @@ func TestDirectSender_ProcessReceivedDirectMessageSignatureFails(t *testing.T) {
 
 	assert.True(t, errors.Is(err, expectedErr))
 	assert.True(t, verifyCalled)
+}
+
+func TestDirectSender_ProcessReceivedDirectMessageMissingSignatureShouldErr(t *testing.T) {
+	t.Parallel()
+
+	ds, _ := libp2p.NewDirectSender(
+		context.Background(),
+		generateHostStub(),
+		&mock.P2PSignerStub{},
+		&testscommon.MarshallerMock{},
+		&testscommon.LoggerStub{},
+	)
+	_ = ds.RegisterDirectMessageProcessor(blankMessageHandler)
+
+	id, _ := createLibP2PCredentialsDirectSender()
+
+	msg := &pb.Message{}
+	msg.Data = []byte("data")
+	msg.Seqno = []byte("111")
+	msg.From = []byte(id)
+	topic := "topic"
+	msg.Topic = &topic
+
+	err := ds.ProcessReceivedDirectMessage(msg, peer.ID(msg.From))
+
+	assert.True(t, errors.Is(err, p2p.ErrMissingSignature))
 }
 
 func TestDirectSender_ProcessReceivedDirectMessageNewMessageFails(t *testing.T) {

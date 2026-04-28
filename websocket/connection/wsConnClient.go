@@ -1,9 +1,12 @@
 package connection
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 	"github.com/multiversx/mx-chain-communication-go/websocket/data"
@@ -11,6 +14,8 @@ import (
 )
 
 var log = logger.GetOrCreate("connection")
+
+var fallbackClientIDCounter uint64
 
 type wsConnClient struct {
 	mut      sync.RWMutex
@@ -28,7 +33,7 @@ func NewWSConnClientWithConn(conn *websocket.Conn) *wsConnClient {
 	wsc := &wsConnClient{
 		conn: conn,
 	}
-	wsc.clientID = fmt.Sprintf("%p", wsc)
+	wsc.clientID = newClientID()
 
 	return wsc
 }
@@ -118,8 +123,6 @@ func (wsc *wsConnClient) Close() error {
 		log.Trace("cannot send close message", "error", err)
 	}
 
-	wsc.conn.CloseHandler()
-
 	err = wsc.conn.Close()
 	if err != nil && !strings.Contains(err.Error(), data.ClosedConnectionMessage) {
 		return err
@@ -127,6 +130,16 @@ func (wsc *wsConnClient) Close() error {
 
 	wsc.conn = nil
 	return nil
+}
+
+func newClientID() string {
+	buff := make([]byte, 16)
+	_, err := rand.Read(buff)
+	if err == nil {
+		return "ws-" + hex.EncodeToString(buff)
+	}
+
+	return fmt.Sprintf("ws-%d", atomic.AddUint64(&fallbackClientIDCounter, 1))
 }
 
 // IsInterfaceNil -

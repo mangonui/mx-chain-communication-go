@@ -117,6 +117,9 @@ var ErrUnsupportedFields = errors.New("unsupported fields")
 // ErrUnsupportedMessageVersion signals that an unsupported message version was detected
 var ErrUnsupportedMessageVersion = errors.New("unsupported message version")
 
+// ErrMissingSignature signals that a message that must be signed arrived without a signature
+var ErrMissingSignature = errors.New("missing message signature")
+
 // ErrNilSyncTimer signals that a nil sync timer was provided
 var ErrNilSyncTimer = errors.New("nil sync timer")
 

@@ -164,8 +164,11 @@ func (ph *peersHolder) Remove(peerID core.PeerID) {
 		return
 	}
 
-	shard, index, _ := ph.getShardAndIndexForPeer(peerID)
-	ph.removePeerFromMapAtIndex(shard, index)
+	shard := pidData.shardID
+	index, found := ph.getCurrentIndexForPeer(peerID, shard)
+	if found {
+		ph.removePeerFromMapAtIndex(shard, index)
+	}
 
 	connAddress := pidData.connectionAddress
 
@@ -225,6 +228,13 @@ func (ph *peersHolder) removePeerFromMapAtIndex(shardID uint32, index int) {
 	ph.peerIDsPerShard[shardID] = append(ph.peerIDsPerShard[shardID][:index], ph.peerIDsPerShard[shardID][index+1:]...)
 	if len(ph.peerIDsPerShard[shardID]) == 0 {
 		delete(ph.peerIDsPerShard, shardID)
+		return
+	}
+
+	for currentIndex, pid := range ph.peerIDsPerShard[shardID] {
+		if pidData, ok := ph.peerIDs[pid]; ok {
+			pidData.index = currentIndex
+		}
 	}
 }
 
@@ -236,6 +246,17 @@ func (ph *peersHolder) getShardAndIndexForPeer(peerID core.PeerID) (uint32, int,
 	}
 
 	return pidData.shardID, pidData.index, true
+}
+
+// this function must be called under mutex protection
+func (ph *peersHolder) getCurrentIndexForPeer(peerID core.PeerID, shardID uint32) (int, bool) {
+	for index, pid := range ph.peerIDsPerShard[shardID] {
+		if pid == peerID {
+			return index, true
+		}
+	}
+
+	return 0, false
 }
 
 // Clear will delete all the entries from the inner map

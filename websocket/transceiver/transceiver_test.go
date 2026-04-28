@@ -249,7 +249,7 @@ func TestWsTransceiverWaitForAck(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		err := webSocketTransceiver.waitForAck(ch)
+		err := webSocketTransceiver.waitForAck(ch, 0)
 		require.Equal(t, data.ErrExpectedAckWasNotReceivedOnClose, err)
 		wg.Done()
 	}()
@@ -275,6 +275,29 @@ func TestWsTransceiver_SendMessageWaitAcKTimeout(t *testing.T) {
 
 	err := webSocketTransceiver.Send([]byte("message"), outport.TopicSaveBlock, conn)
 	require.Equal(t, data.ErrAckTimeout, err)
+	require.Equal(t, 0, len(webSocketTransceiver.mapAck))
+}
+
+func TestWsTransceiver_SendMessageWriteErrorCleansAckChannel(t *testing.T) {
+	args := createArgs()
+	args.WithAcknowledge = true
+	args.AckTimeoutInSec = 2
+
+	webSocketTransceiver, _ := NewTransceiver(args)
+	defer func() {
+		_ = webSocketTransceiver.Close()
+	}()
+
+	expectedErr := errors.New("write failed")
+	conn := &testscommon.WebsocketConnectionStub{
+		WriteMessageCalled: func(messageType int, data []byte) error {
+			return expectedErr
+		},
+	}
+
+	err := webSocketTransceiver.Send([]byte("message"), outport.TopicSaveBlock, conn)
+	require.Equal(t, expectedErr, err)
+	require.Equal(t, 0, len(webSocketTransceiver.mapAck))
 }
 
 func TestWsTransceiver_ListenReturnsTrue(t *testing.T) {

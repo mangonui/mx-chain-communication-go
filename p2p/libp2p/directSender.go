@@ -160,12 +160,12 @@ func (ds *directSender) processReceivedDirectMessage(message *pubsubPb.Message, 
 	if len(message.Seqno) > sequenceNumberSize {
 		return fmt.Errorf("%w for SeqNo field as the node accepts only a maximum %d bytes", p2p.ErrInvalidValue, sequenceNumberSize)
 	}
-	if ds.checkAndSetSeenMessage(message) {
-		return p2p.ErrAlreadySeenMessage
-	}
 	err := ds.checkSig(message)
 	if err != nil {
 		return err
+	}
+	if ds.checkAndSetSeenMessage(message) {
+		return p2p.ErrAlreadySeenMessage
 	}
 
 	pbMessage := &pubsub.Message{
@@ -319,7 +319,7 @@ func (ds *directSender) createMessage(topic string, buff []byte, conn network.Co
 
 func (ds *directSender) checkSig(message *pubsubPb.Message) error {
 	if len(message.Signature) == 0 {
-		return nil // TODO will remove this in the future
+		return p2p.ErrMissingSignature
 	}
 
 	copyMessage := *message

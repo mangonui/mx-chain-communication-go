@@ -154,6 +154,21 @@ func TestNewListsSharder_InvalidCrossShardObserversShouldErr(t *testing.T) {
 	assert.True(t, errors.Is(err, p2p.ErrInvalidValue))
 }
 
+func TestListsSharder_IsSeederRequiresExactPeerIDSegment(t *testing.T) {
+	t.Parallel()
+
+	arg := createMockListSharderArguments()
+	ls, err := networksharding.NewListsSharder(arg)
+	require.Nil(t, err)
+
+	pid := core.PeerID("16Uiu2HAmExactPeer")
+	ls.SetSeeders([]string{"/ip4/127.0.0.1/tcp/10000/p2p/prefix-" + pid.Pretty()})
+	require.False(t, ls.IsSeeder(pid))
+
+	ls.SetSeeders([]string{"/ip4/127.0.0.1/tcp/10000/p2p/" + pid.Pretty()})
+	require.True(t, ls.IsSeeder(pid))
+}
+
 func TestNewListsSharder_NoRoomForUnknownShouldErr(t *testing.T) {
 	t.Parallel()
 
@@ -325,7 +340,7 @@ func TestListsSharder_ComputeEvictionListEvictFromAllShouldWork(t *testing.T) {
 	ls, _ := networksharding.NewListsSharder(arg)
 	seeder := peer.ID(fmt.Sprintf("%d %s", crossShardId, seederMarker))
 	ls.SetSeeders([]string{
-		"ip6/" + seeder.String(),
+		"/ip6/::1/tcp/10000/p2p/" + seeder.String(),
 	})
 
 	pids := []peer.ID{

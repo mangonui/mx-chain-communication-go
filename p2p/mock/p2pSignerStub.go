@@ -15,7 +15,7 @@ func (stub *P2PSignerStub) Sign(payload []byte) ([]byte, error) {
 		return stub.SignCalled(payload)
 	}
 
-	return []byte{}, nil
+	return []byte("signature"), nil
 }
 
 // Verify -

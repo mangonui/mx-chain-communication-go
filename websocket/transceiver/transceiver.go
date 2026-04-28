@@ -168,9 +168,6 @@ func (wt *wsTransceiver) sendAckIfNeeded(connection webSocket.WSConClient, wsMes
 		return
 	}
 
-	timer := time.NewTimer(wt.retryDuration)
-	defer timer.Stop()
-
 	ackWsMessage := &data.WsMessage{
 		Counter: wsMessage.Counter,
 		Type:    data.AckMessage,
@@ -182,8 +179,6 @@ func (wt *wsTransceiver) sendAckIfNeeded(connection webSocket.WSConClient, wsMes
 	}
 
 	for {
-		timer.Reset(wt.retryDuration)
-
 		err := connection.WriteMessage(websocket.BinaryMessage, wsMessageBytes)
 		if err == nil {
 			return
@@ -195,9 +190,11 @@ func (wt *wsTransceiver) sendAckIfNeeded(connection webSocket.WSConClient, wsMes
 
 		wt.log.Debug("wt.sendAckIfNeeded(): cannot write ack", "error", err)
 
+		timer := time.NewTimer(wt.retryDuration)
 		select {
 		case <-timer.C:
 		case <-wt.safeCloser.ChanClose():
+			timer.Stop()
 			return
 		}
 	}
@@ -216,10 +213,11 @@ func (wt *wsTransceiver) Send(payload []byte, topic string, connection webSocket
 	}
 	newPayload, err := wt.payloadParser.ConstructPayload(wsMessage)
 	if err != nil {
+		wt.removeAckChannel(localCounter)
 		return err
 	}
 
-	return wt.sendPayload(newPayload, connection, ch)
+	return wt.sendPayload(newPayload, connection, ch, localCounter)
 }
 
 func (wt *wsTransceiver) prepareChanAndCounter() (chan struct{}, uint64) {
@@ -236,9 +234,10 @@ func (wt *wsTransceiver) prepareChanAndCounter() (chan struct{}, uint64) {
 	return ch, localCounter
 }
 
-func (wt *wsTransceiver) sendPayload(payload []byte, connection webSocket.WSConClient, ch chan struct{}) error {
+func (wt *wsTransceiver) sendPayload(payload []byte, connection webSocket.WSConClient, ch chan struct{}, counter uint64) error {
 	errSend := connection.WriteMessage(websocket.BinaryMessage, payload)
 	if errSend != nil {
+		wt.removeAckChannel(counter)
 		return errSend
 	}
 
@@ -246,12 +245,23 @@ func (wt *wsTransceiver) sendPayload(payload []byte, connection webSocket.WSConC
 		return nil
 	}
 
-	return wt.waitForAck(ch)
+	return wt.waitForAck(ch, counter)
 }
 
-func (wt *wsTransceiver) waitForAck(ch chan struct{}) error {
+func (wt *wsTransceiver) removeAckChannel(counter uint64) {
+	if !wt.withAcknowledge {
+		return
+	}
+
+	wt.mutMapAck.Lock()
+	delete(wt.mapAck, counter)
+	wt.mutMapAck.Unlock()
+}
+
+func (wt *wsTransceiver) waitForAck(ch chan struct{}, counter uint64) error {
 	timer := time.NewTimer(wt.ackTimeout)
 	defer timer.Stop()
+	defer wt.removeAckChannel(counter)
 
 	select {
 	case <-ch:

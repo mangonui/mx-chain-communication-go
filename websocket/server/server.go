@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -27,6 +30,8 @@ type ArgsWebSocketServer struct {
 	PayloadConverter           webSocket.PayloadConverter
 	Log                        core.Logger
 	PayloadVersion             uint32
+	AllowedOrigins             []string
+	TLSConfig                  *tls.Config
 }
 
 type server struct {
@@ -39,8 +44,15 @@ type server struct {
 	log                        core.Logger
 	httpServer                 webSocket.HttpServerHandler
 	transceiversAndConn        transceiversAndConnHandler
+	mutPayloadHandler          sync.RWMutex
 	payloadHandler             webSocket.PayloadHandler
 	payloadVersion             uint32
+	allowedOrigins             []string
+	tlsConfig                  *tls.Config
+}
+
+type tlsHttpServerHandler interface {
+	ListenAndServeTLS(certFile, keyFile string) error
 }
 
 // NewWebSocketServer will create a new instance of server
@@ -60,6 +72,8 @@ func NewWebSocketServer(args ArgsWebSocketServer) (*server, error) {
 		dropMessagesIfNoConnection: args.DropMessagesIfNoConnection,
 		ackTimeoutInSec:            args.AckTimeoutInSeconds,
 		payloadVersion:             args.PayloadVersion,
+		allowedOrigins:             append([]string(nil), args.AllowedOrigins...),
+		tlsConfig:                  args.TLSConfig,
 	}
 
 	wsServer.initializeServer(args.URL, data.WSRoute)
@@ -97,7 +111,8 @@ func (s *server) connectionHandler(connection webSocket.WSConClient) {
 		s.log.Warn("s.connectionHandler cannot create transceiver", "error", err)
 		return
 	}
-	err = webSocketTransceiver.SetPayloadHandler(s.payloadHandler)
+	payloadHandler := s.getPayloadHandler()
+	err = webSocketTransceiver.SetPayloadHandler(payloadHandler)
 	if err != nil {
 		s.log.Warn("s.SetPayloadHandler cannot set payload handler", "error", err)
 	}
@@ -115,8 +130,9 @@ func (s *server) connectionHandler(connection webSocket.WSConClient) {
 func (s *server) initializeServer(wsURL string, wsPath string) {
 	router := mux.NewRouter()
 	httpServer := &http.Server{
-		Addr:    wsURL,
-		Handler: router,
+		Addr:      wsURL,
+		Handler:   router,
+		TLSConfig: s.tlsConfig,
 	}
 
 	upgrader := websocket.Upgrader{
@@ -129,7 +145,7 @@ func (s *server) initializeServer(wsURL string, wsPath string) {
 	addClientFunc := func(writer http.ResponseWriter, r *http.Request) {
 		s.log.Info("new connection", "route", wsPath, "remote address", r.RemoteAddr)
 
-		upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+		upgrader.CheckOrigin = s.checkOrigin
 
 		ws, errUpgrade := upgrader.Upgrade(writer, r, nil)
 		if errUpgrade != nil {
@@ -172,7 +188,17 @@ func (s *server) Send(payload []byte, topic string) error {
 
 func (s *server) start() {
 	go func() {
-		err := s.httpServer.ListenAndServe()
+		var err error
+		if s.tlsConfig != nil {
+			tlsServer, ok := s.httpServer.(tlsHttpServerHandler)
+			if ok {
+				err = tlsServer.ListenAndServeTLS("", "")
+			} else {
+				err = s.httpServer.ListenAndServe()
+			}
+		} else {
+			err = s.httpServer.ListenAndServe()
+		}
 		shouldLogError := err != nil && !strings.Contains(err.Error(), data.ErrServerIsClosed.Error())
 		if shouldLogError {
 			s.log.Error("could not initialize webserver", "error", err)
@@ -185,8 +211,34 @@ func (s *server) start() {
 
 // SetPayloadHandler will set the provided payload handler
 func (s *server) SetPayloadHandler(handler webSocket.PayloadHandler) error {
+	if check.IfNil(handler) {
+		return data.ErrNilPayloadProcessor
+	}
+
+	s.mutPayloadHandler.Lock()
+	defer s.mutPayloadHandler.Unlock()
+
 	s.payloadHandler = handler
 	return nil
+}
+
+func (s *server) getPayloadHandler() webSocket.PayloadHandler {
+	s.mutPayloadHandler.RLock()
+	defer s.mutPayloadHandler.RUnlock()
+
+	return s.payloadHandler
+}
+
+func (s *server) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	if slices.Contains(s.allowedOrigins, origin) {
+		return true
+	}
+
+	return origin == "http://"+r.Host || origin == "https://"+r.Host
 }
 
 // Close will close the server
