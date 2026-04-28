@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"math/bits"
 	"sort"
-	"strings"
 	"sync"
 
 	kbucket "github.com/libp2p/go-libp2p-kbucket"
@@ -364,7 +363,7 @@ func (ls *listsSharder) IsSeeder(pid core.PeerID) bool {
 
 	strPretty := pid.Pretty()
 	for _, seeder := range ls.seeders {
-		if strings.Contains(seeder, strPretty) {
+		if p2p.AddressContainsPeerID(seeder, strPretty) {
 			return true
 		}
 	}

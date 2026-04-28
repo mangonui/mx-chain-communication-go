@@ -274,7 +274,7 @@ func TestNewNetworkMessenger_NilChecksShouldErr(t *testing.T) {
 		arg := createMockNetworkArgs()
 		p2pPrivateKey, _ := p2pCrypto.ConvertPrivateKeyToLibp2pPrivateKey(arg.P2pPrivateKey)
 		pid, _ := peer.IDFromPublicKey(p2pPrivateKey.GetPublic())
-		connString := "/ip4/127.0.0.1/tcp/9999/" + pid.String()
+		connString := "/ip4/127.0.0.1/tcp/9999/p2p/" + pid.String()
 		arg.P2pConfig.KadDhtPeerDiscovery.InitialPeerList = []string{connString}
 		messenger, err := libp2p.NewNetworkMessenger(arg)
 
@@ -1191,7 +1191,7 @@ func TestLibp2pMessenger_SendDirectWithRealMessengersShouldWork(t *testing.T) {
 	waitDoneWithTimeout(t, chanDone, timeoutWaitResponses)
 }
 
-func TestLibp2pMessenger_SendDirectWithRealMessengersWithoutSignatureShouldWork(t *testing.T) {
+func TestLibp2pMessenger_SendDirectWithRealMessengersWithoutSignatureShouldNotDeliver(t *testing.T) {
 	msg := []byte("test message")
 
 	args := libp2p.ArgsNetworkMessenger{
@@ -1235,25 +1235,20 @@ func TestLibp2pMessenger_SendDirectWithRealMessengersWithoutSignatureShouldWork(
 
 	_ = messenger1.ConnectToPeer(adr2)
 
-	wg := &sync.WaitGroup{}
-	chanDone := make(chan bool)
-	wg.Add(1)
-
-	go func() {
-		wg.Wait()
-		chanDone <- true
-	}()
-
-	expectedSigSize := 0
 	_ = messenger1.CreateTopic(testTopic, false)
-	prepareMessengerForMatchDataReceive(
-		messenger2,
-		msg,
-		wg,
-		func(sigSize int) bool {
-			return sigSize == expectedSigSize // message an empty signature
-		},
-	)
+	_ = messenger2.CreateTopic(testTopic, false)
+
+	received := uint32(0)
+	_ = messenger2.RegisterMessageProcessor(testTopic, "identifier",
+		&mock.MessageProcessorStub{
+			ProcessMessageCalled: func(message p2p.MessageP2P, _ core.PeerID, source p2p.MessageHandler) ([]byte, error) {
+				if bytes.Equal(msg, message.Data()) {
+					atomic.AddUint32(&received, 1)
+				}
+
+				return nil, nil
+			},
+		})
 
 	fmt.Println("Delaying as to allow peers to announce themselves on the opened topic...")
 	time.Sleep(time.Second)
@@ -1263,7 +1258,8 @@ func TestLibp2pMessenger_SendDirectWithRealMessengersWithoutSignatureShouldWork(
 	err = messenger1.SendToConnectedPeer("test", msg, messenger2.ID())
 	assert.Nil(t, err)
 
-	waitDoneWithTimeout(t, chanDone, timeoutWaitResponses)
+	time.Sleep(500 * time.Millisecond)
+	assert.Equal(t, uint32(0), atomic.LoadUint32(&received))
 }
 
 func TestLibp2pMessenger_SendDirectWithRealNetToConnectedPeerShouldWork(t *testing.T) {
@@ -1866,7 +1862,6 @@ func TestNetworkMessenger_Bootstrap(t *testing.T) {
 		P2pConfig: config.P2PConfig{
 			Node: config.NodeConfig{
 				Port:                       "0",
-				MaximumExpectedPeerCount:   1,
 				ThresholdMinConnectedPeers: 1,
 				Transports:                 createTestTCPTransportConfig(),
 				ResourceLimiter:            createTestResourceLimiterConfig(),

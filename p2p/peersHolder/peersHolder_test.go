@@ -197,6 +197,35 @@ func TestPeersHolder_Contains(t *testing.T) {
 	ph.Remove(unknownPid) // for code coverage
 }
 
+func TestPeersHolder_RemoveRefreshesSiblingIndexes(t *testing.T) {
+	t.Parallel()
+
+	preferredPeers := []string{"10.100.100.100"}
+	ph, _ := NewPeersHolder(preferredPeers)
+
+	shardID := uint32(123)
+	pids := []core.PeerID{
+		core.PeerID("pid 1"),
+		core.PeerID("pid 2"),
+		core.PeerID("pid 3"),
+	}
+	for _, pid := range pids {
+		ph.PutConnectionAddress(pid, "/ip4/10.100.100.100/tcp/38191/p2p/"+string(pid))
+		ph.PutShardID(pid, shardID)
+	}
+
+	ph.Remove(pids[0])
+	assert.False(t, ph.Contains(pids[0]))
+	assert.Equal(t, 0, ph.peerIDs[pids[1]].index)
+	assert.Equal(t, 1, ph.peerIDs[pids[2]].index)
+
+	ph.Remove(pids[1])
+	assert.False(t, ph.Contains(pids[1]))
+	assert.True(t, ph.Contains(pids[2]))
+	assert.Equal(t, 0, ph.peerIDs[pids[2]].index)
+	assert.Equal(t, []core.PeerID{pids[2]}, ph.peerIDsPerShard[shardID])
+}
+
 func TestPeersHolder_Clear(t *testing.T) {
 	t.Parallel()
 

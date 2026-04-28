@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -136,4 +137,27 @@ func TestServer_SendReturnsErrorIfNoConnection(t *testing.T) {
 
 	err := wsServer.Send([]byte("test"), "test")
 	require.Equal(t, data.ErrNoClientsConnected, err)
+}
+
+func TestServer_CheckOriginAllowsSameOriginAndConfiguredOrigins(t *testing.T) {
+	args := createArgs()
+	args.URL = "localhost:9211"
+	args.AllowedOrigins = []string{"https://trusted.example"}
+	wsServer, _ := NewWebSocketServer(args)
+	defer func() {
+		_ = wsServer.Close()
+	}()
+
+	req, _ := http.NewRequest(http.MethodGet, "http://localhost:9211/ws", nil)
+	req.Host = "localhost:9211"
+	require.True(t, wsServer.checkOrigin(req))
+
+	req.Header.Set("Origin", "http://localhost:9211")
+	require.True(t, wsServer.checkOrigin(req))
+
+	req.Header.Set("Origin", "https://trusted.example")
+	require.True(t, wsServer.checkOrigin(req))
+
+	req.Header.Set("Origin", "https://evil.example")
+	require.False(t, wsServer.checkOrigin(req))
 }

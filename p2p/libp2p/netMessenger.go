@@ -9,6 +9,7 @@ import (
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
@@ -130,6 +131,16 @@ func newNetworkMessenger(args ArgsNetworkMessenger, messageSigning messageSignin
 	}
 
 	setupExternalP2PLoggers()
+
+	selfID, err := peerIDFromPrivateKey(args.P2pPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	err = validateSeedersForPeerID(selfID, args.P2pConfig.KadDhtPeerDiscovery.InitialPeerList)
+	if err != nil {
+		return nil, err
+	}
 
 	p2pNode, err := constructNodeWithPortRetry(args)
 	if err != nil {
@@ -423,14 +434,31 @@ func addComponentsToNode(
 }
 
 func (netMes *networkMessenger) validateSeeders(seeders []string) error {
-	selfID := netMes.p2pHost.ID().String()
+	return validateSeedersForPeerID(netMes.p2pHost.ID().String(), seeders)
+}
+
+func validateSeedersForPeerID(selfID string, seeders []string) error {
 	for _, seeder := range seeders {
-		if strings.Contains(seeder, selfID) {
+		if p2p.AddressContainsPeerID(seeder, selfID) {
 			return fmt.Errorf("%w, self ID %s is in the initial peer list", p2p.ErrInvalidConfig, selfID)
 		}
 	}
 
 	return nil
+}
+
+func peerIDFromPrivateKey(privateKey commonCrypto.PrivateKey) (string, error) {
+	p2pPrivateKey, err := crypto.ConvertPrivateKeyToLibp2pPrivateKey(privateKey)
+	if err != nil {
+		return "", err
+	}
+
+	pid, err := peer.IDFromPublicKey(p2pPrivateKey.GetPublic())
+	if err != nil {
+		return "", err
+	}
+
+	return pid.String(), nil
 }
 
 func (netMes *networkMessenger) createPubSub(messageSigning messageSigningConfig) (PubSub, error) {
@@ -533,6 +561,9 @@ func (netMes *networkMessenger) Close() error {
 	netMes.log.Debug("closing network messenger's host...")
 
 	var err error
+	netMes.log.Debug("closing network messenger's components through the context...")
+	netMes.cancelFunc()
+
 	netMes.log.Debug("closing network messenger's messages handler...")
 	errMH := netMes.MessageHandler.Close()
 	if errMH != nil {
@@ -567,9 +598,6 @@ func (netMes *networkMessenger) Close() error {
 			"component", "connectionsWatcher",
 			"error", err)
 	}
-
-	netMes.log.Debug("closing network messenger's components through the context...")
-	netMes.cancelFunc()
 
 	netMes.log.Debug("closing network messenger's peerstore...")
 	errPeerStore := netMes.p2pHost.Peerstore().Close()

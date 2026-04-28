@@ -33,6 +33,14 @@ func createConnectionURLForTestServer(server *httptest.Server) string {
 	return u.String()
 }
 
+func TestNewWSConnClientWithConnUsesOpaqueID(t *testing.T) {
+	conClient := NewWSConnClientWithConn(nil)
+
+	require.NotEmpty(t, conClient.GetID())
+	require.True(t, strings.HasPrefix(conClient.GetID(), "ws-"))
+	require.NotContains(t, conClient.GetID(), "0x")
+}
+
 func TestWsConnClient_OpenCloseConnectionShouldWork(t *testing.T) {
 	t.Parallel()
 
