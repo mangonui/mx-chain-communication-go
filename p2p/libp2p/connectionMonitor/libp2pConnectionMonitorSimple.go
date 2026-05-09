@@ -147,7 +147,7 @@ func (lcms *libp2pConnectionMonitorSimple) Connected(netw network.Network, conn 
 // Disconnected is called when a connection closed
 func (lcms *libp2pConnectionMonitorSimple) Disconnected(netw network.Network, conn network.Conn) {
 	if conn != nil {
-		lcms.preferredPeersHolder.Remove(core.PeerID(conn.ID()))
+		lcms.preferredPeersHolder.Remove(core.PeerID(conn.RemotePeer()))
 	}
 
 	lcms.doReconnectionIfNeeded(netw)

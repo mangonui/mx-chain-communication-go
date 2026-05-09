@@ -270,7 +270,10 @@ func TestNewLibp2pConnectionMonitorSimple_DisconnectedShouldRemovePeerFromPrefer
 	lcms, _ := connectionMonitor.NewLibp2pConnectionMonitorSimple(args)
 	lcms.Disconnected(&ns, &mock.ConnStub{
 		IDCalled: func() string {
-			return prefPeerID
+			return "connection id"
+		},
+		RemotePeerCalled: func() peer.ID {
+			return peer.ID(prefPeerID)
 		},
 	})
 

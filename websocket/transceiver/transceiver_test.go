@@ -157,6 +157,52 @@ func TestReceiver_ListenAndSendAck(t *testing.T) {
 	mutex.RUnlock()
 }
 
+func TestReceiver_SetPayloadHandlerWhileReceiving(t *testing.T) {
+	t.Parallel()
+
+	args := createArgs()
+	webSocketsReceiver, err := NewTransceiver(args)
+	require.Nil(t, err)
+
+	preparedPayload, _ := args.PayloadConverter.ConstructPayload(&data.WsMessage{
+		Payload: []byte("something"),
+		Topic:   outport.TopicSaveAccounts,
+		Type:    data.PayloadMessage,
+	})
+
+	var processed uint64
+	conn := &testscommon.WebsocketConnectionStub{
+		ReadMessageCalled: func() (int, []byte, error) {
+			if atomic.LoadUint64(&processed) > 50 {
+				return 0, nil, errors.New("closed")
+			}
+			return websocket.BinaryMessage, preparedPayload, nil
+		},
+		WriteMessageCalled: func(messageType int, d []byte) error {
+			return nil
+		},
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = webSocketsReceiver.Listen(conn)
+	}()
+
+	for i := 0; i < 100; i++ {
+		_ = webSocketsReceiver.SetPayloadHandler(&testscommon.PayloadHandlerStub{
+			ProcessPayloadCalled: func(_ []byte, _ string, _ uint32) error {
+				atomic.AddUint64(&processed, 1)
+				return nil
+			},
+		})
+	}
+
+	wg.Wait()
+	require.Greater(t, atomic.LoadUint64(&processed), uint64(0))
+}
+
 func TestSender_AddConnectionSendAndClose(t *testing.T) {
 	args := createArgs()
 	args.WithAcknowledge = true

@@ -140,13 +140,21 @@ func (wt *wsTransceiver) verifyPayloadAndSendAckIfNeeded(connection webSocket.WS
 		return
 	}
 
-	err = wt.payloadHandler.ProcessPayload(wsMessage.Payload, wsMessage.Topic, wsMessage.Version)
+	payloadHandler := wt.getPayloadHandler()
+	err = payloadHandler.ProcessPayload(wsMessage.Payload, wsMessage.Topic, wsMessage.Version)
 	if err != nil && wt.blockingAckOnError {
 		wt.log.Warn("wt.payloadHandler.ProcessPayload: cannot handle payload", "error", err)
 		return
 	}
 
 	wt.sendAckIfNeeded(connection, wsMessage)
+}
+
+func (wt *wsTransceiver) getPayloadHandler() webSocket.PayloadHandler {
+	wt.mutPayloadHandler.RLock()
+	defer wt.mutPayloadHandler.RUnlock()
+
+	return wt.payloadHandler
 }
 
 func (wt *wsTransceiver) handleAckMessage(counter uint64) {
