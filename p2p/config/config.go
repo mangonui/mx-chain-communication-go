@@ -9,11 +9,13 @@ type P2PConfig struct {
 
 // NodeConfig will hold basic p2p settings
 type NodeConfig struct {
-	Port                       string
-	ThresholdMinConnectedPeers uint32
-	EnableNATPortMap           bool
-	Transports                 TransportConfig
-	ResourceLimiter            ResourceLimiterConfig
+	Port                            string
+	MaximumExpectedPeerCount        uint64
+	ThresholdMinConnectedPeers      uint32
+	MinNumPeersToWaitForOnBootstrap uint32
+	EnableNATPortMap                bool
+	Transports                      TransportConfig
+	ResourceLimiter                 ResourceLimiterConfig
 }
 
 // TransportConfig specifies the supported protocols by the node
