@@ -99,27 +99,19 @@ func checkArgs(args ArgsWebSocketClient) error {
 
 func (c *client) start() {
 	go func() {
-		timer := time.NewTimer(c.retryDuration)
-		defer timer.Stop()
 		for {
 			err := c.wsConn.OpenConnection(c.url)
 			if err != nil && !errors.Is(err, data.ErrConnectionAlreadyOpen) {
 				c.log.Warn(fmt.Sprintf("c.openConnection(), retrying in %v...", c.retryDuration), "error", err)
 			}
 
-			timer.Reset(c.retryDuration)
-
-			select {
-			case <-timer.C:
-			case <-c.safeCloser.ChanClose():
+			if !c.waitRetry() {
 				return
 			}
 		}
 	}()
 
 	go func() {
-		timer := time.NewTimer(c.retryDuration)
-		defer timer.Stop()
 		for {
 			closed := c.transceiver.Listen(c.wsConn)
 			if closed {
@@ -127,15 +119,23 @@ func (c *client) start() {
 				c.log.Debug("try to close the connection", "close error", err)
 			}
 
-			timer.Reset(c.retryDuration)
-
-			select {
-			case <-c.safeCloser.ChanClose():
+			if !c.waitRetry() {
 				return
-			case <-timer.C:
 			}
 		}
 	}()
+}
+
+func (c *client) waitRetry() bool {
+	timer := time.NewTimer(c.retryDuration)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return true
+	case <-c.safeCloser.ChanClose():
+		return false
+	}
 }
 
 // Send will send the provided payload from args

@@ -9,6 +9,7 @@ import (
 	"github.com/multiversx/mx-chain-communication-go/testscommon"
 	"github.com/multiversx/mx-chain-communication-go/websocket"
 	"github.com/multiversx/mx-chain-communication-go/websocket/data"
+	"github.com/multiversx/mx-chain-core-go/core/closing"
 	"github.com/multiversx/mx-chain-core-go/data/outport"
 	"github.com/stretchr/testify/require"
 )
@@ -82,6 +83,23 @@ func TestClient_SendAndClose(t *testing.T) {
 	_ = ws.Close()
 	wg.Wait()
 	require.Equal(t, uint64(1), atomic.LoadUint64(&count))
+}
+
+func TestClient_WaitRetryStartsAfterOperation(t *testing.T) {
+	t.Parallel()
+
+	retryDuration := 30 * time.Millisecond
+	c := &client{
+		retryDuration: retryDuration,
+		safeCloser:    closing.NewSafeChanCloser(),
+	}
+
+	time.Sleep(retryDuration)
+	start := time.Now()
+	shouldContinue := c.waitRetry()
+
+	require.True(t, shouldContinue)
+	require.GreaterOrEqual(t, time.Since(start), retryDuration)
 }
 
 func TestClient_Send(t *testing.T) {
