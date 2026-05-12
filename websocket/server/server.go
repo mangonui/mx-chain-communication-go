@@ -19,6 +19,8 @@ import (
 	"github.com/multiversx/mx-chain-core-go/core/check"
 )
 
+const shutdownTimeout = 30 * time.Second
+
 // ArgsWebSocketServer holds all the components needed to create a server
 type ArgsWebSocketServer struct {
 	RetryDurationInSeconds     int
@@ -234,18 +236,18 @@ func (s *server) checkOrigin(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
-	if slices.Contains(s.allowedOrigins, origin) {
-		return true
-	}
 
-	return origin == "http://"+r.Host || origin == "https://"+r.Host
+	return slices.Contains(s.allowedOrigins, origin)
 }
 
 // Close will close the server
 func (s *server) Close() error {
 	var lastError error
 
-	err := s.httpServer.Shutdown(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	err := s.httpServer.Shutdown(ctx)
 	if err != nil {
 		s.log.Debug("server.Close() cannot close http server", "error", err)
 		lastError = err

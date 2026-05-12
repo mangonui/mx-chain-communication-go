@@ -4,9 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/multiversx/mx-chain-communication-go/websocket/data"
@@ -16,6 +18,11 @@ import (
 var log = logger.GetOrCreate("connection")
 
 var fallbackClientIDCounter uint64
+
+var configuredDialer = &websocket.Dialer{
+	HandshakeTimeout: 10 * time.Second,
+	Proxy:            http.ProxyFromEnvironment,
+}
 
 type wsConnClient struct {
 	mut      sync.RWMutex
@@ -48,7 +55,7 @@ func (wsc *wsConnClient) OpenConnection(url string) error {
 	}
 
 	var err error
-	wsc.conn, _, err = websocket.DefaultDialer.Dial(url, nil)
+	wsc.conn, _, err = configuredDialer.Dial(url, nil)
 	if err != nil {
 		return err
 	}

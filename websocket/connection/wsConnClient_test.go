@@ -15,6 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestConfiguredDialerHasHandshakeTimeout(t *testing.T) {
+	t.Parallel()
+
+	require.NotZero(t, configuredDialer.HandshakeTimeout)
+}
+
 func filterAddress(originalURL string) string {
 	if strings.Contains(originalURL, "://") {
 		originalURL = strings.Split(originalURL, "://")[1]

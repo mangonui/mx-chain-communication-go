@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sync"
@@ -142,7 +143,7 @@ func TestServer_SendReturnsErrorIfNoConnection(t *testing.T) {
 func TestServer_CheckOriginAllowsSameOriginAndConfiguredOrigins(t *testing.T) {
 	args := createArgs()
 	args.URL = "localhost:9211"
-	args.AllowedOrigins = []string{"https://trusted.example"}
+	args.AllowedOrigins = []string{"https://trusted.example", "http://localhost:9211"}
 	wsServer, _ := NewWebSocketServer(args)
 	defer func() {
 		_ = wsServer.Close()
@@ -160,4 +161,26 @@ func TestServer_CheckOriginAllowsSameOriginAndConfiguredOrigins(t *testing.T) {
 
 	req.Header.Set("Origin", "https://evil.example")
 	require.False(t, wsServer.checkOrigin(req))
+}
+
+func TestServer_CloseUsesShutdownDeadline(t *testing.T) {
+	t.Parallel()
+
+	shutdownCalled := false
+	wsServer := &server{
+		httpServer: &testscommon.HttpServerStub{
+			ShutdownCalled: func(ctx context.Context) error {
+				shutdownCalled = true
+				_, hasDeadline := ctx.Deadline()
+				require.True(t, hasDeadline)
+				return nil
+			},
+		},
+		transceiversAndConn: newTransceiversAndConnHolder(),
+		log:                 &testscommon.LoggerMock{},
+	}
+
+	err := wsServer.Close()
+	require.NoError(t, err)
+	require.True(t, shutdownCalled)
 }
