@@ -60,7 +60,21 @@ func choosePort(startPort int, endPort int, handler func(int) error, log p2p.Log
 		ports = append(ports, i)
 	}
 
-	ports = random.FisherYatesShuffle(ports, &random.ConcurrentSafeIntRandomizer{})
+	// ISSUE-045: FisherYatesShuffle now returns (shuffled, error). On
+	// entropy failure, fall back to the partially-shuffled slice that
+	// FisherYatesShuffle returns alongside the error — it's still a
+	// valid permutation of the input ports, just less random than the
+	// crypto-rand-driven full shuffle. Port selection is non-security-
+	// critical (the caller iterates the slice and tries each port until
+	// one binds), so a deterministic-after-first-failure traversal is
+	// acceptable. Logging at TRACE matches the existing per-port-try
+	// log level in this function.
+	ports, shuffleErr := random.FisherYatesShuffle(ports, &random.ConcurrentSafeIntRandomizer{})
+	if shuffleErr != nil {
+		log.Trace("FisherYatesShuffle: entropy failure during free-port search; "+
+			"using partial shuffle returned by the helper",
+			"error", shuffleErr)
+	}
 	for _, p := range ports {
 		err := handler(p)
 		if err != nil {
